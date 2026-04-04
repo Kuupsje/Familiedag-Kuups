@@ -635,6 +635,7 @@ function renderAlles() {
 }
 
 function render() {
+  if (isLoading) return; // niet renderen én opslaan tijdens laden
   renderAlles();
   slaOp();
 }
@@ -1011,11 +1012,11 @@ function laadUitLocalStorage() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
-    if (data.leden)                    state.leden       = data.leden;
-    if (data.inleg)                    state.inleg       = data.inleg;
-    if (data.declaraties)              state.declaraties = data.declaraties;
-    if (data.beginSaldo !== undefined) state.beginSaldo  = data.beginSaldo;
-    if (data.nextId)                   state.nextId      = data.nextId;
+    if (Array.isArray(data.leden))       state.leden       = data.leden;
+    if (Array.isArray(data.inleg))       state.inleg       = data.inleg;
+    if (Array.isArray(data.declaraties)) state.declaraties = data.declaraties;
+    if (data.beginSaldo !== undefined)   state.beginSaldo  = data.beginSaldo;
+    if (data.nextId !== undefined)       state.nextId      = data.nextId;
   } catch(e) { console.warn('localStorage laden mislukt:', e); }
 }
 
@@ -1049,18 +1050,23 @@ async function slaOp() {
 async function laadOp() {
   isLoading = true;
   toonLaadscherm(true);
+
+  function verwerkData(data) {
+    // Volledig vervangen, nooit samenvoegen
+    if (Array.isArray(data.leden))       state.leden       = data.leden;
+    if (Array.isArray(data.inleg))       state.inleg       = data.inleg;
+    if (Array.isArray(data.declaraties)) state.declaraties = data.declaraties;
+    if (data.beginSaldo !== undefined)   state.beginSaldo  = data.beginSaldo;
+    if (data.nextId !== undefined)       state.nextId      = data.nextId;
+  }
+
   if (heeftClaudeOpslag()) {
     try {
       const result = await window.storage.get(STORAGE_KEY, true);
       if (result && result.value) {
-        const data = JSON.parse(result.value);
-        if (data.leden)                    state.leden       = data.leden;
-        if (data.inleg)                    state.inleg       = data.inleg;
-        if (data.declaraties)              state.declaraties = data.declaraties;
-        if (data.beginSaldo !== undefined) state.beginSaldo  = data.beginSaldo;
-        if (data.nextId)                   state.nextId      = data.nextId;
+        verwerkData(JSON.parse(result.value));
       } else {
-        laadUitLocalStorage(); // niets in Claude opslag, probeer lokaal
+        laadUitLocalStorage();
       }
     } catch(e) {
       console.warn('Claude opslag laden mislukt, val terug op localStorage:', e);
@@ -1069,6 +1075,7 @@ async function laadOp() {
   } else {
     laadUitLocalStorage();
   }
+
   isLoading = false;
   toonLaadscherm(false);
   renderAlles();
