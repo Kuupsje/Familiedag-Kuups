@@ -390,6 +390,7 @@
   .delete-btn:hover { opacity: 0.8; }
   .admin-only { display: none; }
   body.admin-mode .admin-only { display: inline-flex; }
+  body.admin-mode .drag-handle { display: flex !important; }
 
   /* Uitbetaald toggle */
   .paid-toggle {
@@ -665,8 +666,9 @@ function renderLeden() {
     const catDatum = volgendeCategorieDatum(lid.geboortedatum);
     const catTip = catDatum ? `<div style="font-size:0.68rem;color:#C77DFF;margin-top:2px">🎂 tarief ↑ op ${formatDatum(catDatum.toISOString().slice(0,10))}</div>` : '';
     return `
-    <div class="card">
+    <div class="card" draggable="false" data-id="${lid.id}" style="touch-action:pan-y">
       <div style="display:flex;align-items:center;gap:12px">
+        <div class="admin-only drag-handle" style="display:none;cursor:grab;font-size:1.2rem;color:#ccc;padding:4px 2px;touch-action:none">⠿</div>
         <div class="avatar" style="background:${colorForId(lid.id)}22">${lid.emoji}</div>
         <div style="flex:1">
           <div class="member-name">${lid.naam}</div>
@@ -688,6 +690,101 @@ function renderLeden() {
       </div>
     </div>`;
   }).join('');
+
+  initSortable();
+}
+
+// ==================== DRAG & DROP SORTEREN ====================
+let dragSrc = null;
+let dragStartY = 0;
+let touchDragEl = null;
+let touchClone = null;
+let touchStartIdx = -1;
+
+function initSortable() {
+  if (!state.isAdmin) return;
+  const cards = document.querySelectorAll('#leden-list .card');
+
+  cards.forEach(card => {
+    const handle = card.querySelector('.drag-handle');
+    if (!handle) return;
+
+    // Desktop drag
+    handle.addEventListener('mousedown', () => { card.draggable = true; });
+    card.addEventListener('dragstart', e => {
+      dragSrc = card;
+      e.dataTransfer.effectAllowed = 'move';
+      card.style.opacity = '0.4';
+    });
+    card.addEventListener('dragend', () => {
+      card.style.opacity = '';
+      card.draggable = false;
+      document.querySelectorAll('#leden-list .card').forEach(c => c.style.border = '');
+    });
+    card.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      if (dragSrc && dragSrc !== card) {
+        const ids = [...document.querySelectorAll('#leden-list .card')].map(c => parseInt(c.dataset.id));
+        const fromIdx = ids.indexOf(parseInt(dragSrc.dataset.id));
+        const toIdx   = ids.indexOf(parseInt(card.dataset.id));
+        const moved = state.leden.splice(fromIdx, 1)[0];
+        state.leden.splice(toIdx, 0, moved);
+        render();
+      }
+    });
+
+    // Touch drag (mobiel)
+    handle.addEventListener('touchstart', e => {
+      touchStartIdx = [...document.querySelectorAll('#leden-list .card')].indexOf(card);
+      touchDragEl = card;
+      dragStartY = e.touches[0].clientY;
+      touchClone = card.cloneNode(true);
+      touchClone.style.cssText = `position:fixed;left:${card.getBoundingClientRect().left}px;top:${card.getBoundingClientRect().top}px;width:${card.offsetWidth}px;opacity:0.85;z-index:9999;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.2);border-radius:20px;`;
+      document.body.appendChild(touchClone);
+      card.style.opacity = '0.3';
+      e.preventDefault();
+    }, { passive: false });
+
+    handle.addEventListener('touchmove', e => {
+      if (!touchClone) return;
+      const dy = e.touches[0].clientY - dragStartY;
+      touchClone.style.top = (parseFloat(touchClone.style.top) + dy) + 'px';
+      dragStartY = e.touches[0].clientY;
+
+      // Zoek kaart eronder
+      touchClone.style.display = 'none';
+      const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+      touchClone.style.display = '';
+      const target = el ? el.closest('#leden-list .card') : null;
+      document.querySelectorAll('#leden-list .card').forEach(c => c.style.outline = '');
+      if (target && target !== touchDragEl) target.style.outline = '2px solid var(--sky)';
+      e.preventDefault();
+    }, { passive: false });
+
+    handle.addEventListener('touchend', e => {
+      if (!touchClone) return;
+      touchClone.remove(); touchClone = null;
+      if (touchDragEl) touchDragEl.style.opacity = '';
+      document.querySelectorAll('#leden-list .card').forEach(c => c.style.outline = '');
+
+      const el = document.elementFromPoint(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      const target = el ? el.closest('#leden-list .card') : null;
+      if (target && target !== touchDragEl) {
+        const cards = [...document.querySelectorAll('#leden-list .card')];
+        const toIdx = cards.indexOf(target);
+        if (touchStartIdx >= 0 && toIdx >= 0 && touchStartIdx !== toIdx) {
+          const moved = state.leden.splice(touchStartIdx, 1)[0];
+          state.leden.splice(toIdx, 0, moved);
+          render();
+        }
+      }
+      touchDragEl = null; touchStartIdx = -1;
+    });
+  });
 }
 
 function renderInleg() {
