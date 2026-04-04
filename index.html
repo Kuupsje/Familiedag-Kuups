@@ -682,6 +682,7 @@ function renderLeden() {
           ${bijdr > 0
             ? `<span class="member-amount" style="color:${colorForId(lid.id)}">${formatEuro(bijdr)}<span style="font-size:0.65rem;color:#aaa">/mnd</span></span>`
             : `<span class="amount-gratis">Gratis</span>`}
+          <button class="delete-btn admin-only" onclick="bewerkLid(${lid.id})" style="opacity:0.5;font-size:0.9rem">✏️</button>
           <button class="delete-btn admin-only" onclick="deleteLid(${lid.id})">🗑</button>
         </div>
       </div>
@@ -940,6 +941,46 @@ function saveLid() {
   const emoji = document.getElementById('f-emoji').value;
   if (!naam || !geboortedatum) return alert('Vul naam en geboortedatum in!');
   state.leden.push({ id: state.nextId++, naam, geboortedatum, emoji });
+  closeAddModal(); render();
+}
+
+function bewerkLid(id) {
+  const lid = getLid(id);
+  if (!lid) return;
+  document.getElementById('modal-title').textContent = '✏️ Familielid aanpassen';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-group"><label>Naam</label><input id="f-naam" value="${lid.naam}"></div>
+    <div class="form-group"><label>Geboortedatum</label><input id="f-gebdat" type="date" value="${lid.geboortedatum}" max="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="form-group"><label>Emoji</label>
+      <select id="f-emoji">${AVATARS.map(e => `<option ${e === lid.emoji ? 'selected' : ''}>${e}</option>`).join('')}</select>
+    </div>
+    <div id="f-preview" style="background:#F7F0FF;border-radius:12px;padding:10px 14px;margin-bottom:4px;font-size:0.85rem;font-weight:700;color:#7B2FBE;display:none"></div>
+    <button class="btn-primary" onclick="saveLidBewerkt(${id})">✅ Opslaan</button>
+    <button class="btn-secondary" onclick="closeAddModal()">Annuleren</button>
+  `;
+  document.getElementById('f-gebdat').addEventListener('change', function() {
+    const preview = document.getElementById('f-preview');
+    const leeftijd = berekenLeeftijd(this.value);
+    const bijdr = maandBijdrage(this.value);
+    const catDatum = volgendeCategorieDatum(this.value);
+    let tekst = `🎂 ${leeftijd} jaar · bijdrage: ${bijdr === 0 ? 'Gratis' : '€' + bijdr + '/mnd'}`;
+    if (catDatum) tekst += ` · tarief ↑ op ${formatDatum(catDatum.toISOString().slice(0,10))}`;
+    preview.textContent = tekst;
+    preview.style.display = 'block';
+  });
+  document.getElementById('addModal').classList.add('open');
+}
+
+function saveLidBewerkt(id) {
+  const lid = getLid(id);
+  if (!lid) return;
+  const naam = document.getElementById('f-naam').value.trim();
+  const geboortedatum = document.getElementById('f-gebdat').value;
+  const emoji = document.getElementById('f-emoji').value;
+  if (!naam || !geboortedatum) return alert('Vul naam en geboortedatum in!');
+  lid.naam = naam;
+  lid.geboortedatum = geboortedatum;
+  lid.emoji = emoji;
   closeAddModal(); render();
 }
 
