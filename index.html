@@ -768,6 +768,7 @@ function renderLeden() {
   // Gezinnen bovenaan (ingeklapt/uitklapbaar)
   if (state.gezinnen.length) {
     state.gezinnen.forEach(g => {
+      // Render leden in de volgorde van g.ledenIds
       const leden = g.ledenIds.map(id => getLid(id)).filter(Boolean);
       const totBijdr = leden.reduce((s, l) => s + maandBijdrage(l.geboortedatum), 0);
       const isOpen = gezinnenOpen[g.id] === true;
@@ -927,6 +928,17 @@ function initSortable() {
       if (fromIdx === -1 || toIdx === -1) return;
       const moved = state.leden.splice(fromIdx, 1)[0];
       state.leden.splice(toIdx, 0, moved);
+
+      // Ook de volgorde in g.ledenIds bijwerken
+      const gezin = state.gezinnen.find(g => g.ledenIds.includes(fromLidId));
+      if (gezin) {
+        const fi = gezin.ledenIds.indexOf(fromLidId);
+        const ti = gezin.ledenIds.indexOf(toLidId);
+        if (fi !== -1 && ti !== -1) {
+          gezin.ledenIds.splice(fi, 1);
+          gezin.ledenIds.splice(ti, 0, fromLidId);
+        }
+      }
       render();
     });
 
@@ -966,11 +978,22 @@ function initSortable() {
       const el = document.elementFromPoint(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
       const target = el ? el.closest('#leden-list .card') : null;
       if (target && target !== touchDragEl && target.parentElement === touchDragEl.parentElement) {
+        const fromLidId = parseInt(touchDragEl.dataset.id);
         const toLidId = parseInt(target.dataset.id);
         const toIdx = state.leden.findIndex(l => l.id === toLidId);
         if (touchStartIdx >= 0 && toIdx >= 0 && touchStartIdx !== toIdx) {
           const moved = state.leden.splice(touchStartIdx, 1)[0];
           state.leden.splice(toIdx, 0, moved);
+          // Ook volgorde in g.ledenIds bijwerken
+          const gezin = state.gezinnen.find(g => g.ledenIds.includes(fromLidId));
+          if (gezin) {
+            const fi = gezin.ledenIds.indexOf(fromLidId);
+            const ti = gezin.ledenIds.indexOf(toLidId);
+            if (fi !== -1 && ti !== -1) {
+              gezin.ledenIds.splice(fi, 1);
+              gezin.ledenIds.splice(ti, 0, fromLidId);
+            }
+          }
           render();
         }
       }
