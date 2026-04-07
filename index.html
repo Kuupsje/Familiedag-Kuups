@@ -789,7 +789,7 @@ function renderLeden() {
             <div class="admin-only gezin-drag-handle" style="cursor:grab;font-size:1.3rem;color:#ccc;padding:4px;touch-action:none">⠿</div>
           </div>
         </div>
-        ${isOpen ? `<div style="margin-top:6px;padding-left:8px">${leden.map(l => lidRij(l)).join('')}</div>` : ''}
+        ${isOpen ? `<div style="margin-top:6px;padding-left:8px" data-gezin-leden="${g.id}">${leden.map(l => lidRij(l)).join('')}</div>` : ''}
       </div>`;
     });
   }
@@ -868,31 +868,24 @@ let touchStartIdx = -1;
 
 function initSortable() {
   if (!state.isAdmin) return;
-  const allCards = document.querySelectorAll('#leden-list .card');
 
-  allCards.forEach(card => {
+  // Initialiseer drag voor ALLE .card elementen
+  document.querySelectorAll('#leden-list .card').forEach(card => {
     const handle = card.querySelector('.drag-handle');
     if (!handle) return;
 
     const lidId = parseInt(card.dataset.id);
 
-    // Bepaal in welke container dit lid zit (gezin-div of root)
-    function getSiblingCards(card) {
-      const parent = card.parentElement;
-      return [...parent.querySelectorAll(':scope > .card')];
-    }
+    // Welke container zit dit lid in? (gezin-container of root)
+    const container = card.closest('[data-gezin-leden]') || document.getElementById('leden-list');
+    const gezinId = container.dataset?.gezinLeden ? parseInt(container.dataset.gezinLeden) : null;
 
-    function getLidIdsInContainer(cards) {
-      return cards.map(c => parseInt(c.dataset.id));
-    }
-
-    // Desktop drag
     handle.addEventListener('mousedown', () => { card.draggable = true; });
 
     card.addEventListener('dragstart', e => {
       dragSrc = card;
       e.dataTransfer.effectAllowed = 'move';
-      setTimeout(() => card.style.opacity = '0.4', 0);
+      setTimeout(() => { if(dragSrc) dragSrc.style.opacity = '0.4'; }, 0);
     });
 
     card.addEventListener('dragend', () => {
@@ -904,48 +897,53 @@ function initSortable() {
 
     card.addEventListener('dragover', e => {
       e.preventDefault();
-      if (dragSrc && dragSrc !== card && dragSrc.parentElement === card.parentElement) {
+      if (!dragSrc || dragSrc === card) return;
+      // Alleen binnen dezelfde container
+      const srcContainer = dragSrc.closest('[data-gezin-leden]') || document.getElementById('leden-list');
+      const tgtContainer = card.closest('[data-gezin-leden]') || document.getElementById('leden-list');
+      if (srcContainer === tgtContainer) {
         card.style.borderTop = '3px solid var(--sky)';
       }
     });
 
-    card.addEventListener('dragleave', () => {
-      card.style.borderTop = '';
-    });
+    card.addEventListener('dragleave', () => { card.style.borderTop = ''; });
 
     card.addEventListener('drop', e => {
       e.preventDefault();
       card.style.borderTop = '';
       if (!dragSrc || dragSrc === card) return;
-      if (dragSrc.parentElement !== card.parentElement) return;
 
-      const siblings = getSiblingCards(card);
-      const ids = getLidIdsInContainer(siblings);
-      const fromLidId = parseInt(dragSrc.dataset.id);
-      const toLidId = parseInt(card.dataset.id);
-      const fromIdx = state.leden.findIndex(l => l.id === fromLidId);
-      const toIdx   = state.leden.findIndex(l => l.id === toLidId);
-      if (fromIdx === -1 || toIdx === -1) return;
-      const moved = state.leden.splice(fromIdx, 1)[0];
-      state.leden.splice(toIdx, 0, moved);
+      const srcContainer = dragSrc.closest('[data-gezin-leden]') || document.getElementById('leden-list');
+      const tgtContainer = card.closest('[data-gezin-leden]') || document.getElementById('leden-list');
+      if (srcContainer !== tgtContainer) return;
 
-      // Ook de volgorde in g.ledenIds bijwerken
-      const gezin = state.gezinnen.find(g => g.ledenIds.includes(fromLidId));
-      if (gezin) {
-        const fi = gezin.ledenIds.indexOf(fromLidId);
-        const ti = gezin.ledenIds.indexOf(toLidId);
-        if (fi !== -1 && ti !== -1) {
-          gezin.ledenIds.splice(fi, 1);
-          gezin.ledenIds.splice(ti, 0, fromLidId);
-        }
+      const fromId = parseInt(dragSrc.dataset.id);
+      const toId   = parseInt(card.dataset.id);
+
+      if (gezinId !== null) {
+        // Binnen een gezin: update g.ledenIds
+        const g = state.gezinnen.find(x => x.id === gezinId);
+        if (!g) return;
+        const fi = g.ledenIds.indexOf(fromId);
+        const ti = g.ledenIds.indexOf(toId);
+        if (fi === -1 || ti === -1) return;
+        g.ledenIds.splice(fi, 1);
+        g.ledenIds.splice(ti, 0, fromId);
+      } else {
+        // Losse leden: update state.leden volgorde
+        const fi = state.leden.findIndex(l => l.id === fromId);
+        const ti = state.leden.findIndex(l => l.id === toId);
+        if (fi === -1 || ti === -1) return;
+        const moved = state.leden.splice(fi, 1)[0];
+        state.leden.splice(ti, 0, moved);
       }
       render();
     });
 
-    // Touch drag (mobiel)
+    // Touch (mobiel)
     handle.addEventListener('touchstart', e => {
       touchDragEl = card;
-      touchStartIdx = state.leden.findIndex(l => l.id === lidId);
+      touchStartIdx = lidId; // gebruik lidId als referentie
       dragStartY = e.touches[0].clientY;
       touchClone = card.cloneNode(true);
       touchClone.style.cssText = `position:fixed;left:${card.getBoundingClientRect().left}px;top:${card.getBoundingClientRect().top}px;width:${card.offsetWidth}px;opacity:0.85;z-index:9999;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.2);border-radius:20px;`;
@@ -960,12 +958,14 @@ function initSortable() {
       touchClone.style.top = (parseFloat(touchClone.style.top) + dy) + 'px';
       dragStartY = e.touches[0].clientY;
       touchClone.style.display = 'none';
-      const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+      const elUnder = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
       touchClone.style.display = '';
-      const target = el ? el.closest('#leden-list .card') : null;
+      const target = elUnder ? elUnder.closest('#leden-list .card') : null;
       document.querySelectorAll('#leden-list .card').forEach(c => c.style.outline = '');
-      if (target && target !== touchDragEl && target.parentElement === touchDragEl.parentElement) {
-        target.style.outline = '2px solid var(--sky)';
+      if (target && target !== touchDragEl) {
+        const srcCont = touchDragEl.closest('[data-gezin-leden]') || document.getElementById('leden-list');
+        const tgtCont = target.closest('[data-gezin-leden]') || document.getElementById('leden-list');
+        if (srcCont === tgtCont) target.style.outline = '2px solid var(--sky)';
       }
       e.preventDefault();
     }, { passive: false });
@@ -975,32 +975,44 @@ function initSortable() {
       touchClone.remove(); touchClone = null;
       if (touchDragEl) touchDragEl.style.opacity = '';
       document.querySelectorAll('#leden-list .card').forEach(c => c.style.outline = '');
-      const el = document.elementFromPoint(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
-      const target = el ? el.closest('#leden-list .card') : null;
-      if (target && target !== touchDragEl && target.parentElement === touchDragEl.parentElement) {
-        const fromLidId = parseInt(touchDragEl.dataset.id);
-        const toLidId = parseInt(target.dataset.id);
-        const toIdx = state.leden.findIndex(l => l.id === toLidId);
-        if (touchStartIdx >= 0 && toIdx >= 0 && touchStartIdx !== toIdx) {
-          const moved = state.leden.splice(touchStartIdx, 1)[0];
-          state.leden.splice(toIdx, 0, moved);
-          // Ook volgorde in g.ledenIds bijwerken
-          const gezin = state.gezinnen.find(g => g.ledenIds.includes(fromLidId));
-          if (gezin) {
-            const fi = gezin.ledenIds.indexOf(fromLidId);
-            const ti = gezin.ledenIds.indexOf(toLidId);
+
+      const elUnder = document.elementFromPoint(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      const target = elUnder ? elUnder.closest('#leden-list .card') : null;
+      if (target && target !== touchDragEl) {
+        const srcCont = touchDragEl.closest('[data-gezin-leden]') || document.getElementById('leden-list');
+        const tgtCont = target.closest('[data-gezin-leden]') || document.getElementById('leden-list');
+        if (srcCont !== tgtCont) { touchDragEl = null; touchStartIdx = -1; return; }
+
+        const fromId = parseInt(touchDragEl.dataset.id);
+        const toId   = parseInt(target.dataset.id);
+        const gId    = srcCont.dataset?.gezinLeden ? parseInt(srcCont.dataset.gezinLeden) : null;
+
+        if (gId !== null) {
+          const g = state.gezinnen.find(x => x.id === gId);
+          if (g) {
+            const fi = g.ledenIds.indexOf(fromId);
+            const ti = g.ledenIds.indexOf(toId);
             if (fi !== -1 && ti !== -1) {
-              gezin.ledenIds.splice(fi, 1);
-              gezin.ledenIds.splice(ti, 0, fromLidId);
+              g.ledenIds.splice(fi, 1);
+              g.ledenIds.splice(ti, 0, fromId);
+              render();
             }
           }
-          render();
+        } else {
+          const fi = state.leden.findIndex(l => l.id === fromId);
+          const ti = state.leden.findIndex(l => l.id === toId);
+          if (fi !== -1 && ti !== -1) {
+            const moved = state.leden.splice(fi, 1)[0];
+            state.leden.splice(ti, 0, moved);
+            render();
+          }
         }
       }
       touchDragEl = null; touchStartIdx = -1;
     });
   });
 }
+
 
 function renderInleg() {
   const el = document.getElementById('inleg-list');
