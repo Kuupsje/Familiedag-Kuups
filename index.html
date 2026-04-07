@@ -423,8 +423,9 @@
     transition: opacity 0.2s;
   }
   .delete-btn:hover { opacity: 0.8; }
-  .admin-only { display: none; }
-  body.admin-mode .admin-only { display: inline-flex; }
+  .admin-only { display: none !important; }
+  body.admin-mode .admin-only { display: inline-flex !important; }
+  body.admin-mode .tab.admin-only { display: inline-block !important; }
   body.admin-mode .drag-handle { display: flex !important; }
 
   /* Uitbetaald toggle */
